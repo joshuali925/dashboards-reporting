@@ -13,7 +13,7 @@
     "test": "../../node_modules/.bin/jest --config ./test/jest.config.js",
     "cypress:run": "cypress run",
     "cypress:open": "cypress open",
-    "plugin_helpers": "node ../../scripts/plugin_helpers",
+    "plugin-helpers": "node ../../scripts/plugin_helpers",
     "postinstall": "node ./scripts/patch-html2canvas.js"
   },
   "dependencies": {
