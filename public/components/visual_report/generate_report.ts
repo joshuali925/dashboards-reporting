@@ -6,6 +6,7 @@
 import createDOMPurify from 'dompurify';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { createWorker } from 'tesseract.js';
 import { v1 as uuidv1 } from 'uuid';
 import { ReportSchemaType } from '../../../server/model';
 import { uiSettingsService } from '../utils/settings_service';
@@ -122,8 +123,8 @@ export const generateReport = async (id: string, forceDelay = 15000) => {
   );
   const format =
     report.report_definition.report_params.core_params.report_format;
-  const reportSource = report.report_definition.report_params
-    .report_source as unknown as VISUAL_REPORT_TYPE;
+  const reportSource = (report.report_definition.report_params
+    .report_source as unknown) as VISUAL_REPORT_TYPE;
   const headerInput = report.report_definition.report_params.core_params.header;
   const footerInput = report.report_definition.report_params.core_params.footer;
   const header = headerInput
@@ -176,7 +177,7 @@ export const generateReport = async (id: string, forceDelay = 15000) => {
       addReportFooter(documentClone, footer);
       addReportStyle(documentClone, reportingStyle);
     },
-  }).then(function (canvas) {
+  }).then(async function (canvas) {
     // TODO remove this and 'removeContainer: false' when https://github.com/niklasvh/html2canvas/pull/2949 is merged
     document
       .querySelectorAll<HTMLIFrameElement>('.html2canvas-container')
@@ -198,6 +199,34 @@ export const generateReport = async (id: string, forceDelay = 15000) => {
       link.download = fileName;
       link.href = canvas.toDataURL();
       link.click();
+    } else if (uiSettingsService.get('reporting:useOcr')) {
+      const worker = await createWorker({
+        workerPath: '../api/reporting/tesseract.js/dist/worker.min.js',
+        langPath: '../api/reporting/tesseract-lang-data',
+        corePath: '../api/reporting/tesseract.js-core/tesseract-core.wasm.js',
+      });
+      await worker.loadLanguage('eng');
+      await worker.initialize('eng');
+      const {
+        data: { text, pdf },
+      } = await worker
+        .recognize(canvas.toDataURL(), { pdfTitle: fileName }, { pdf: true })
+        .catch((e) => console.error('recognize', e));
+      await worker.terminate();
+
+      const blob = new Blob([new Uint8Array(pdf)], {
+        type: 'application/pdf',
+      });
+      const link = document.createElement('a');
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } else {
       const orient = canvas.width > canvas.height ? 'landscape' : 'portrait';
       const pdf = new jsPDF(orient, 'px', [canvas.width, canvas.height]);
